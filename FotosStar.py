@@ -28,7 +28,8 @@ st.title("📸 Captura Guiada - Andén")
 # --- CONFIGURACIÓN OAUTH ---
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 CLIENT_CONFIG = {"web": st.secrets["oauth_client"]["web"]}
-REDIRECT_URI = st.secrets["oauth_client"]["redirect_uri"]
+# Sacamos el redirect_uri directo de la config de web
+REDIRECT_URI = st.secrets["oauth_client"]["web"]["redirect_uris"][0]
 
 def get_google_service():
     if 'credentials' not in st.session_state:
@@ -79,7 +80,7 @@ FLUJO_FOTOS = [
     {"key": "documentos", "titulo": "8. Documentos entregados", "req": "Con firmas visibles"}
 ]
 
-if 'paso' not in st.session_state: st.session_state.paso = -1 
+if 'paso' not in st.session_state: st.session_state.paso = -1
 if 'referencia' not in st.session_state: st.session_state.referencia = ""
 if 'fotos_mercancia' not in st.session_state: st.session_state.fotos_mercancia = 0
 if 'carpeta_referencia_id' not in st.session_state: st.session_state.carpeta_referencia_id = ""
@@ -91,7 +92,7 @@ def crear_carpeta_drive(nombre_carpeta, parent_id):
         'parents': [parent_id]
     }
     carpeta = drive_service.files().create(
-        body=file_metadata, 
+        body=file_metadata,
         fields='id'
     ).execute()
     return carpeta.get('id')
@@ -99,13 +100,13 @@ def crear_carpeta_drive(nombre_carpeta, parent_id):
 def subir_a_drive(nombre_archivo, foto_bytes, carpeta_id):
     file_metadata = {'name': nombre_archivo, 'parents': [carpeta_id]}
     media = MediaIoBaseUpload(
-        io.BytesIO(foto_bytes), 
-        mimetype='image/jpeg', 
+        io.BytesIO(foto_bytes),
+        mimetype='image/jpeg',
         resumable=False
     )
     archivo = drive_service.files().create(
-        body=file_metadata, 
-        media_body=media, 
+        body=file_metadata,
+        media_body=media,
         fields='id'
     ).execute()
     return archivo.get('id')
@@ -119,7 +120,7 @@ if st.session_state.paso == -1:
         with st.spinner('Creando carpeta en Drive...'):
             try:
                 st.session_state.carpeta_referencia_id = crear_carpeta_drive(
-                    st.session_state.referencia, 
+                    st.session_state.referencia,
                     CARPETA_DRIVE_ID
                 )
                 st.session_state.paso = 0
@@ -155,7 +156,7 @@ elif st.session_state.paso < len(FLUJO_FOTOS):
                     except Exception as e:
                         st.error(f"Error subiendo: {e}")
             else: st.warning("Toma la foto primero")
-        
+
         if col2.button("Terminar mercancía y seguir", type="primary"):
             if st.session_state.fotos_mercancia > 0:
                 st.session_state.paso += 1
