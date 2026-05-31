@@ -38,6 +38,9 @@ def get_google_service():
             scopes=SCOPES,
             redirect_uri=REDIRECT_URI
         )
+        # ARREGLO 1: Desactivar PKCE 👇
+        flow.code_verifier = None
+
         authorization_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
         st.warning("Necesitas iniciar sesión con Google Drive")
         st.link_button("🔑 Conectar con Google Drive", authorization_url)
@@ -50,6 +53,9 @@ def get_google_service():
 query_params = st.query_params
 if 'code' in query_params and 'credentials' not in st.session_state:
     flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+    # ARREGLO 2: Desactivar PKCE también aquí 👇
+    flow.code_verifier = None
+
     flow.fetch_token(code=query_params['code'])
     st.session_state['credentials'] = {
         'token': flow.credentials.token,
