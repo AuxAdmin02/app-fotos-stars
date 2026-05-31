@@ -1,9 +1,7 @@
 import streamlit as st
 import os
 from datetime import datetime
-from pathlib import Path
-from google_auth_oauthlib.flow import Flow
-from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 import io
@@ -25,58 +23,19 @@ if not st.session_state.auth:
 st.set_page_config(page_title="Captura Guiada", layout="centered")
 st.title("📸 Captura Guiada - Andén")
 
-# --- CONFIGURACIÓN OAUTH ---
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
-CLIENT_CONFIG = {"web": st.secrets["oauth_client"]["web"]}
-# Sacamos el redirect_uri directo de la config de web
-REDIRECT_URI = st.secrets["oauth_client"]["web"]["redirect_uris"][0]
+# --- CONFIGURACIÓN SERVICE ACCOUNT ---
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
+@st.cache_resource
 def get_google_service():
-    if 'credentials' not in st.session_state:
-        flow = Flow.from_client_config(
-            CLIENT_CONFIG,
-            scopes=SCOPES,
-            redirect_uri=REDIRECT_URI
-        )
-        flow.code_verifier = None # DESACTIVAR PKCE
-
-        authorization_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
-        st.warning("Necesitas iniciar sesión con Google Drive")
-        st.link_button("🔑 Conectar con Google Drive", authorization_url)
-        st.stop()
-
-    creds = Credentials.from_authorized_user_info(st.session_state['credentials'], SCOPES)
+    creds = service_account.Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=SCOPES
+    )
     return build('drive', 'v3', credentials=creds)
 
-# Manejo del callback de OAuth - VERSIÓN A PRUEBA DE ERRORES
-query_params = st.query_params
-if 'code' in query_params and 'credentials' not in st.session_state:
-    try:
-        flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES, redirect_uri=REDIRECT_URI)
-        flow.code_verifier = None # DESACTIVAR PKCE
-
-        flow.fetch_token(code=query_params['code'])
-        st.session_state['credentials'] = {
-            'token': flow.credentials.token,
-            'refresh_token': flow.credentials.refresh_token,
-            'token_uri': flow.credentials.token_uri,
-            'client_id': flow.credentials.client_id,
-            'client_secret': flow.credentials.client_secret,
-            'scopes': flow.credentials.scopes
-        }
-        st.query_params.clear()
-        st.rerun()
-    except Exception as e:
-        st.error("El código de Google expiró o ya se usó. Vuelve a conectar.")
-        st.query_params.clear()
-        if 'credentials' in st.session_state:
-            del st.session_state['credentials']
-        st.info("Dale click al botón de conectar otra vez 👇")
-        st.stop()
-
-# Si no hay credenciales, detiene la app y muestra botón de login
 drive_service = get_google_service()
-st.success("✅ Conectado a Google Drive")
+st.success("✅ Conectado a Google Drive automáticamente")
 
 # ID DE TU CARPETA "Fotos_Anden" EN DRIVE
 CARPETA_DRIVE_ID = "1wqnI-CgvopBrc2tXwDZ8iR_yddrn8fcX"
@@ -103,24 +62,13 @@ def crear_carpeta_drive(nombre_carpeta, parent_id):
         'mimeType': 'application/vnd.google-apps.folder',
         'parents': [parent_id]
     }
-    carpeta = drive_service.files().create(
-        body=file_metadata,
-        fields='id'
-    ).execute()
+    carpeta = drive_service.files().create(body=file_metadata, fields='id').execute()
     return carpeta.get('id')
 
 def subir_a_drive(nombre_archivo, foto_bytes, carpeta_id):
     file_metadata = {'name': nombre_archivo, 'parents': [carpeta_id]}
-    media = MediaIoBaseUpload(
-        io.BytesIO(foto_bytes),
-        mimetype='image/jpeg',
-        resumable=False
-    )
-    archivo = drive_service.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields='id'
-    ).execute()
+    media = MediaIoBaseUpload(io.BytesIO(foto_bytes), mimetype='image/jpeg', resumable=False)
+    archivo = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
     return archivo.get('id')
 
 # PASO -1: Nombre de referencia
@@ -139,10 +87,7 @@ if st.session_state.paso == -1:
                 st.success(f"Carpeta creada en Drive: {st.session_state.referencia}")
                 st.rerun()
             except Exception as e:
-                st.error(f"Error creando carpeta: {e}")
-                if "invalid_grant" in str(e) or "token" in str(e).lower():
-                    del st.session_state['credentials']
-                    st.rerun()
+                st.error(f"Error: {e}")
 
 # PASOS 0-7: Toma de fotos
 elif st.session_state.paso < len(FLUJO_FOTOS):
@@ -167,9 +112,6 @@ elif st.session_state.paso < len(FLUJO_FOTOS):
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error subiendo: {e}")
-                        if "invalid_grant" in str(e).lower():
-                            del st.session_state['credentials']
-                            st.rerun()
             else: st.warning("Toma la foto primero")
 
         if col2.button("Terminar mercancía y seguir", type="primary"):
@@ -191,9 +133,6 @@ elif st.session_state.paso < len(FLUJO_FOTOS):
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error subiendo: {e}")
-                        if "invalid_grant" in str(e).lower():
-                            del st.session_state['credentials']
-                            st.rerun()
             else: st.warning("Toma la foto primero")
 
 # PASO FINAL
