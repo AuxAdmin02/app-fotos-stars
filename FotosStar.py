@@ -38,8 +38,7 @@ def get_google_service():
             scopes=SCOPES,
             redirect_uri=REDIRECT_URI
         )
-        # ARREGLO 1: Desactivar PKCE 👇
-        flow.code_verifier = None
+        flow.code_verifier = None # DESACTIVAR PKCE
 
         authorization_url, _ = flow.authorization_url(access_type='offline', prompt='consent')
         st.warning("Necesitas iniciar sesión con Google Drive")
@@ -49,24 +48,31 @@ def get_google_service():
     creds = Credentials.from_authorized_user_info(st.session_state['credentials'], SCOPES)
     return build('drive', 'v3', credentials=creds)
 
-# Manejo del callback de OAuth
+# Manejo del callback de OAuth - VERSIÓN A PRUEBA DE ERRORES
 query_params = st.query_params
 if 'code' in query_params and 'credentials' not in st.session_state:
-    flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES, redirect_uri=REDIRECT_URI)
-    # ARREGLO 2: Desactivar PKCE también aquí 👇
-    flow.code_verifier = None
+    try:
+        flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES, redirect_uri=REDIRECT_URI)
+        flow.code_verifier = None # DESACTIVAR PKCE
 
-    flow.fetch_token(code=query_params['code'])
-    st.session_state['credentials'] = {
-        'token': flow.credentials.token,
-        'refresh_token': flow.credentials.refresh_token,
-        'token_uri': flow.credentials.token_uri,
-        'client_id': flow.credentials.client_id,
-        'client_secret': flow.credentials.client_secret,
-        'scopes': flow.credentials.scopes
-    }
-    st.query_params.clear()
-    st.rerun()
+        flow.fetch_token(code=query_params['code'])
+        st.session_state['credentials'] = {
+            'token': flow.credentials.token,
+            'refresh_token': flow.credentials.refresh_token,
+            'token_uri': flow.credentials.token_uri,
+            'client_id': flow.credentials.client_id,
+            'client_secret': flow.credentials.client_secret,
+            'scopes': flow.credentials.scopes
+        }
+        st.query_params.clear()
+        st.rerun()
+    except Exception as e:
+        st.error("El código de Google expiró o ya se usó. Vuelve a conectar.")
+        st.query_params.clear()
+        if 'credentials' in st.session_state:
+            del st.session_state['credentials']
+        st.info("Dale click al botón de conectar otra vez 👇")
+        st.stop()
 
 # Si no hay credenciales, detiene la app y muestra botón de login
 drive_service = get_google_service()
@@ -134,7 +140,7 @@ if st.session_state.paso == -1:
                 st.rerun()
             except Exception as e:
                 st.error(f"Error creando carpeta: {e}")
-                if "invalid_grant" in str(e) or "token" in str(e):
+                if "invalid_grant" in str(e) or "token" in str(e).lower():
                     del st.session_state['credentials']
                     st.rerun()
 
@@ -161,6 +167,9 @@ elif st.session_state.paso < len(FLUJO_FOTOS):
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error subiendo: {e}")
+                        if "invalid_grant" in str(e).lower():
+                            del st.session_state['credentials']
+                            st.rerun()
             else: st.warning("Toma la foto primero")
 
         if col2.button("Terminar mercancía y seguir", type="primary"):
@@ -182,6 +191,9 @@ elif st.session_state.paso < len(FLUJO_FOTOS):
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error subiendo: {e}")
+                        if "invalid_grant" in str(e).lower():
+                            del st.session_state['credentials']
+                            st.rerun()
             else: st.warning("Toma la foto primero")
 
 # PASO FINAL
