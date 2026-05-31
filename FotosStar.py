@@ -62,13 +62,22 @@ def crear_carpeta_drive(nombre_carpeta, parent_id):
         'mimeType': 'application/vnd.google-apps.folder',
         'parents': [parent_id]
     }
-    carpeta = drive_service.files().create(body=file_metadata, fields='id').execute()
+    carpeta = drive_service.files().create(
+        body=file_metadata,
+        fields='id',
+        supportsAllDrives=True  # FIX: Para que el Service Account use tu Drive
+    ).execute()
     return carpeta.get('id')
 
 def subir_a_drive(nombre_archivo, foto_bytes, carpeta_id):
     file_metadata = {'name': nombre_archivo, 'parents': [carpeta_id]}
     media = MediaIoBaseUpload(io.BytesIO(foto_bytes), mimetype='image/jpeg', resumable=False)
-    archivo = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    archivo = drive_service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields='id',
+        supportsAllDrives=True  # FIX: Para que el Service Account use tu Drive
+    ).execute()
     return archivo.get('id')
 
 # PASO -1: Nombre de referencia
@@ -87,7 +96,8 @@ if st.session_state.paso == -1:
                 st.success(f"Carpeta creada en Drive: {st.session_state.referencia}")
                 st.rerun()
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error creando carpeta: {e}")
+                st.error("Verifica que compartiste la carpeta 'Fotos_Anden' con el email del Service Account como Editor")
 
 # PASOS 0-7: Toma de fotos
 elif st.session_state.paso < len(FLUJO_FOTOS):
