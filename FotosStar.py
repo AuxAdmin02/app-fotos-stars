@@ -2,6 +2,10 @@ import streamlit as st
 import os
 from datetime import datetime
 from pathlib import Path
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+import io
 
 # CANDADO: Cambia "Anden2026" por tu contraseña
 CLAVE = "Anden2026"
@@ -20,8 +24,21 @@ if not st.session_state.auth:
 st.set_page_config(page_title="Captura Guiada", layout="centered")
 st.title("📸 Captura Guiada - Andén")
 
-# SE GUARDA EN TU ESCRITORIO
-RUTA_BASE = Path.home() / "Desktop" / "Fotos_Anden"
+# CONEXIÓN A DRIVE usando secrets de Streamlit
+@st.cache_resource
+def conectar_drive():
+    creds = service_account.Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=["https://www.googleapis.com/auth/drive"]
+    )
+    return build("drive", "v3", credentials=creds)
+
+drive_service = conectar_drive()
+
+# ID DE TU CARPETA "Fotos_Anden" EN DRIVE - SÁCALO DE LA URL
+# Cuando abres la carpeta en Drive, la URL es: drive.google.com/drive/folders/1ABCxyz...
+# Ese 1ABCxyz es el ID
+CARPETA_DRIVE_ID = "1wqnI-CgvopBrc2tXwDZ8iR_yddrn8fcX"
 
 FLUJO_FOTOS = [
     {"key": "chofer", "titulo": "1. Identificación del Chofer", "req": "Foto clara de INE o licencia"},
@@ -37,13 +54,26 @@ FLUJO_FOTOS = [
 if 'paso' not in st.session_state: st.session_state.paso = -1 
 if 'carpeta' not in st.session_state: st.session_state.carpeta = ""
 if 'fotos_mercancia' not in st.session_state: st.session_state.fotos_mercancia = 0
-if 'ruta_lote' not in st.session_state: st.session_state.ruta_lote = ""
+if 'carpeta_lote_id' not in st.session_state: st.session_state.carpeta_lote_id = ""
 
-def guardar_local(nombre_archivo, foto_bytes):
-    ruta_completa = st.session_state.ruta_lote / nombre_archivo
-    with open(ruta_completa, "wb") as f:
-        f.write(foto_bytes)
-    return ruta_completa
+def crear_carpeta_drive(nombre_carpeta, parent_id):
+    file_metadata = {
+        'name': nombre_carpeta,
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [parent_id]
+    }
+    carpeta = drive_service.files().create(body=file_metadata, fields='id').execute()
+    return carpeta.get('id')
+
+def subir_a_drive(nombre_archivo, foto_bytes, carpeta_id):
+    file_metadata = {'name': nombre_archivo, 'parents': [carpeta_id]}
+    media = MediaIoBaseUpload(io.BytesIO(foto_bytes), mimetype='image/jpeg')
+    archivo = drive_service.files().create(
+        body=file_metadata, 
+        media_body=media, 
+        fields='id'
+    ).execute()
+    return archivo.get('id')
 
 # PASO -1: Nombre de carpeta
 if st.session_state.paso == -1:
@@ -51,10 +81,13 @@ if st.session_state.paso == -1:
     nombre = st.text_input("Nombre de la carpeta:", placeholder="Ej: Entrada_Pedido_789_Placas_XYZ")
     if st.button("Crear carpeta e iniciar", type="primary") and nombre:
         st.session_state.carpeta = nombre.replace(" ", "_")
-        st.session_state.ruta_lote = RUTA_BASE / st.session_state.carpeta
-        os.makedirs(st.session_state.ruta_lote, exist_ok=True)
+        # Crear carpeta en Drive
+        st.session_state.carpeta_lote_id = crear_carpeta_drive(
+            st.session_state.carpeta, 
+            CARPETA_DRIVE_ID
+        )
         st.session_state.paso = 0
-        st.success(f"Carpeta creada en: {st.session_state.ruta_lote}")
+        st.success(f"Carpeta creada en Drive: {st.session_state.carpeta}")
         st.rerun()
 
 # PASOS 0-7: Toma de fotos
@@ -62,7 +95,7 @@ elif st.session_state.paso < len(FLUJO_FOTOS):
     paso_actual = FLUJO_FOTOS[st.session_state.paso]
     st.subheader(paso_actual["titulo"])
     st.caption(f"Requisito: {paso_actual['req']}")
-    st.info(f"Guardando en: {st.session_state.ruta_lote}")
+    st.info(f"Guardando en Drive: Fotos_Anden/{st.session_state.carpeta}")
     st.progress((st.session_state.paso + 1) / len(FLUJO_FOTOS))
 
     if paso_actual.get("multiple"):
@@ -72,9 +105,9 @@ elif st.session_state.paso < len(FLUJO_FOTOS):
         if col1.button("Guardar foto y tomar otra"):
             if foto:
                 nombre = f"{datetime.now().strftime('%H%M%S')}5_mercancia{st.session_state.fotos_mercancia+1}.jpg"
-                ruta = guardar_local(nombre, foto.getvalue())
+                subir_a_drive(nombre, foto.getvalue(), st.session_state.carpeta_lote_id)
                 st.session_state.fotos_mercancia += 1
-                st.toast(f"✅ Guardada: {ruta.name}")
+                st.toast(f"✅ Subida a Drive: {nombre}")
                 st.rerun()
             else: st.warning("Toma la foto primero")
         
@@ -89,22 +122,20 @@ elif st.session_state.paso < len(FLUJO_FOTOS):
         if st.button("Guardar y siguiente", type="primary"):
             if foto:
                 nombre = f"{st.session_state.paso+1}_{paso_actual['key']}.jpg"
-                ruta = guardar_local(nombre, foto.getvalue())
-                st.success(f"✅ Guardada: {ruta.name}")
+                subir_a_drive(nombre, foto.getvalue(), st.session_state.carpeta_lote_id)
+                st.success(f"✅ Subida a Drive: {nombre}")
                 st.session_state.paso += 1
                 st.rerun()
             else: st.warning("Toma la foto primero")
 
 # PASO FINAL
 else:
-    st.success(f"🎉 Lote completo guardado en tu Escritorio")
+    st.success(f"🎉 Lote completo guardado en Google Drive")
     st.balloons()
-    st.code(f"{st.session_state.ruta_lote}")
-    if st.button("Abrir carpeta"):
-        os.startfile(st.session_state.ruta_lote)
+    st.link_button("Ver carpeta en Drive", f"https://drive.google.com/drive/folders/{st.session_state.carpeta_lote_id}")
     if st.button("Empezar nuevo lote"):
         st.session_state.paso = -1
         st.session_state.carpeta = ""
         st.session_state.fotos_mercancia = 0
-        st.session_state.ruta_lote = ""
+        st.session_state.carpeta_lote_id = ""
         st.rerun()
