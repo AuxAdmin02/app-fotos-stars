@@ -63,18 +63,22 @@ def crear_carpeta_drive(nombre_carpeta, parent_id):
     carpeta = drive_service.files().create(
         body=file_metadata, 
         fields='id',
-        supportsAllDrives=True # <-- FIX 1: Agregado para que jale
+        supportsAllDrives=True
     ).execute()
     return carpeta.get('id')
 
 def subir_a_drive(nombre_archivo, foto_bytes, carpeta_id):
     file_metadata = {'name': nombre_archivo, 'parents': [carpeta_id]}
-    media = MediaIoBaseUpload(io.BytesIO(foto_bytes), mimetype='image/jpeg', resumable=True)
+    media = MediaIoBaseUpload(
+        io.BytesIO(foto_bytes), 
+        mimetype='image/jpeg', 
+        resumable=False
+    )
     archivo = drive_service.files().create(
         body=file_metadata, 
         media_body=media, 
         fields='id',
-        supportsAllDrives=True # <-- FIX 2: Este era el que faltaba y tronaba las fotos
+        supportsAllDrives=True
     ).execute()
     return archivo.get('id')
 
@@ -84,7 +88,6 @@ if st.session_state.paso == -1:
     nombre = st.text_input("Referencia:", placeholder="Ej: Entrada_Pedido_789_Placas_XYZ")
     if st.button("Crear carpeta e iniciar", type="primary") and nombre:
         st.session_state.referencia = nombre.replace(" ", "_")
-        # Crear carpeta en Drive
         with st.spinner('Creando carpeta en Drive...'):
             st.session_state.carpeta_referencia_id = crear_carpeta_drive(
                 st.session_state.referencia, 
