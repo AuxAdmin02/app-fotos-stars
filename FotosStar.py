@@ -1,10 +1,11 @@
 import streamlit as st
 import os
 from datetime import datetime
-from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 import io
+import json
 
 # CANDADO: Cambia "Anden2026" por tu contraseña
 CLAVE = "Anden2026"
@@ -23,15 +24,13 @@ if not st.session_state.auth:
 st.set_page_config(page_title="Captura Guiada", layout="centered")
 st.title("📸 Captura Guiada - Andén")
 
-# --- CONFIGURACIÓN SERVICE ACCOUNT ---
+# --- CONFIGURACIÓN OAUTH ---
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 @st.cache_resource
 def get_google_service():
-    creds = service_account.Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=SCOPES
-    )
+    token_info = json.loads(st.secrets["gcp_oauth"]["token"])
+    creds = Credentials.from_authorized_user_info(token_info, SCOPES)
     return build('drive', 'v3', credentials=creds)
 
 drive_service = get_google_service()
@@ -64,8 +63,7 @@ def crear_carpeta_drive(nombre_carpeta, parent_id):
     }
     carpeta = drive_service.files().create(
         body=file_metadata,
-        fields='id',
-        supportsAllDrives=True  # FIX: Para que el Service Account use tu Drive
+        fields='id'
     ).execute()
     return carpeta.get('id')
 
@@ -75,8 +73,7 @@ def subir_a_drive(nombre_archivo, foto_bytes, carpeta_id):
     archivo = drive_service.files().create(
         body=file_metadata,
         media_body=media,
-        fields='id',
-        supportsAllDrives=True  # FIX: Para que el Service Account use tu Drive
+        fields='id'
     ).execute()
     return archivo.get('id')
 
@@ -97,7 +94,7 @@ if st.session_state.paso == -1:
                 st.rerun()
             except Exception as e:
                 st.error(f"Error creando carpeta: {e}")
-                st.error("Verifica que compartiste la carpeta 'Fotos_Anden' con el email del Service Account como Editor")
+                st.error("Verifica que el token en Secrets sea correcto")
 
 # PASOS 0-7: Toma de fotos
 elif st.session_state.paso < len(FLUJO_FOTOS):
