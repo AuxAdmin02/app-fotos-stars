@@ -24,6 +24,20 @@ if not st.session_state.auth:
 st.set_page_config(page_title="Captura Guiada", layout="centered")
 st.title("📸 Captura Guiada - Andén")
 
+# --- SOLUCIÓN 2: PERMISO DE CÁMARA UNA SOLA VEZ ---
+if 'camara_ok' not in st.session_state:
+    st.session_state.camara_ok = False
+
+if not st.session_state.camara_ok:
+    st.warning("📷 PASO IMPORTANTE: Da permiso a la cámara y NO la niegues.")
+    st.info("Toma 1 foto de prueba. Con eso el navegador recuerda el permiso para todas las demás fotos.")
+    foto_test = st.camera_input("Prueba de cámara - toma cualquier foto")
+    if foto_test:
+        st.session_state.camara_ok = True
+        st.success("✅ Permiso de cámara guardado. Ya puedes continuar.")
+        st.rerun()
+    st.stop()
+
 # --- CONFIGURACIÓN OAUTH ---
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
@@ -80,6 +94,7 @@ def subir_a_drive(nombre_archivo, foto_bytes, carpeta_id):
 # PASO -1: Nombre de referencia
 if st.session_state.paso == -1:
     st.subheader("Paso 1: Nombra la Referencia")
+    st.info("⚠️ No salgas de la app ni bloquees el celular hasta terminar las 8 fotos")
     nombre = st.text_input("Referencia:", placeholder="Ej: Entrada_Pedido_789_Placas_XYZ")
     if st.button("Crear carpeta e iniciar", type="primary") and nombre:
         st.session_state.referencia = nombre.replace(" ", "_")
@@ -152,4 +167,3 @@ else:
         st.session_state.referencia = ""
         st.session_state.fotos_mercancia = 0
         st.session_state.carpeta_referencia_id = ""
-        st.rerun()
