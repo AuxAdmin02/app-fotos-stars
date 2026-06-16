@@ -24,14 +24,14 @@ if not st.session_state.auth:
 st.set_page_config(page_title="Captura Guiada", layout="centered")
 st.title("📸 Captura Guiada - Andén")
 
-# --- PERMISO DE CÁMARA UNA SOLA VEZ ---
+# --- SOLUCIÓN 2: PERMISO DE CÁMARA UNA SOLA VEZ ---
 if 'camara_ok' not in st.session_state:
     st.session_state.camara_ok = False
 
 if not st.session_state.camara_ok:
-    st.warning("📷 PASO IMPORTANTE: Da permiso a la cámara y toca 'Permitir'")
-    st.info("Toma 1 foto de prueba. Con eso el navegador recuerda el permiso para todas las demás.")
-    foto_test = st.camera_input("Prueba de cámara - toma cualquier foto", key="camara_test")
+    st.warning("📷 PASO IMPORTANTE: Da permiso a la cámara y NO la niegues.")
+    st.info("Toma 1 foto de prueba. Con eso el navegador recuerda el permiso para todas las demás fotos.")
+    foto_test = st.camera_input("Prueba de cámara - toma cualquier foto")
     if foto_test:
         st.session_state.camara_ok = True
         st.success("✅ Permiso de cámara guardado. Ya puedes continuar.")
@@ -50,6 +50,7 @@ def get_google_service():
 drive_service = get_google_service()
 st.success("✅ Conectado a Google Drive automáticamente")
 
+# ID DE TU CARPETA "Fotos_Anden" EN DRIVE
 CARPETA_DRIVE_ID = "1wqnI-CgvopBrc2tXwDZ8iR_yddrn8fcX"
 
 FLUJO_FOTOS = [
@@ -74,13 +75,20 @@ def crear_carpeta_drive(nombre_carpeta, parent_id):
         'mimeType': 'application/vnd.google-apps.folder',
         'parents': [parent_id]
     }
-    carpeta = drive_service.files().create(body=file_metadata, fields='id').execute()
+    carpeta = drive_service.files().create(
+        body=file_metadata,
+        fields='id'
+    ).execute()
     return carpeta.get('id')
 
 def subir_a_drive(nombre_archivo, foto_bytes, carpeta_id):
     file_metadata = {'name': nombre_archivo, 'parents': [carpeta_id]}
     media = MediaIoBaseUpload(io.BytesIO(foto_bytes), mimetype='image/jpeg', resumable=False)
-    archivo = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    archivo = drive_service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields='id'
+    ).execute()
     return archivo.get('id')
 
 # PASO -1: Nombre de referencia
@@ -92,7 +100,10 @@ if st.session_state.paso == -1:
         st.session_state.referencia = nombre.replace(" ", "_")
         with st.spinner('Creando carpeta en Drive...'):
             try:
-                st.session_state.carpeta_referencia_id = crear_carpeta_drive(st.session_state.referencia, CARPETA_DRIVE_ID)
+                st.session_state.carpeta_referencia_id = crear_carpeta_drive(
+                    st.session_state.referencia,
+                    CARPETA_DRIVE_ID
+                )
                 st.session_state.paso = 0
                 st.success(f"Carpeta creada en Drive: {st.session_state.referencia}")
                 st.rerun()
@@ -110,35 +121,29 @@ elif st.session_state.paso < len(FLUJO_FOTOS):
 
     if paso_actual.get("multiple"):
         st.write(f"Fotos de mercancía tomadas: {st.session_state.fotos_mercancia}")
-
-        # CAMBIO 1: file_uploader para quitar límite de 8 fotos
-        fotos = st.file_uploader(
-            "Toma las fotos con tu cámara y selecciónalas todas aquí",
-            type=["jpg", "jpeg", "png"],
-            accept_multiple_files=True,
-            key="uploader_mercancia"
-        )
-
-        if st.button("Guardar todas y seguir", type="primary"):
-            if fotos:
-                with st.spinner(f'Subiendo {len(fotos)} fotos a Drive...'):
+        foto = st.camera_input("Toma una foto de tarima/caja/etiqueta", key=f"foto_{st.session_state.paso}_{st.session_state.fotos_mercancia}")
+        col1, col2 = st.columns(2)
+        if col1.button("Guardar foto y tomar otra"):
+            if foto:
+                with st.spinner('Subiendo a Drive...'):
                     try:
-                        for i, foto in enumerate(fotos):
-                            nombre = f"{datetime.now().strftime('%H%M%S')}_5_mercancia{st.session_state.fotos_mercancia+i+1}.jpg"
-                            subir_a_drive(nombre, foto.getvalue(), st.session_state.carpeta_referencia_id)
-
-                        st.session_state.fotos_mercancia += len(fotos)
-                        st.success(f"✅ Subidas {len(fotos)} fotos a Drive")
-                        st.session_state.paso += 1
+                        nombre = f"{datetime.now().strftime('%H%M%S')}_5_mercancia{st.session_state.fotos_mercancia+1}.jpg"
+                        subir_a_drive(nombre, foto.getvalue(), st.session_state.carpeta_referencia_id)
+                        st.session_state.fotos_mercancia += 1
+                        st.toast(f"✅ Subida a Drive: {nombre}")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error subiendo: {e}")
-            else:
-                st.warning("Sube al menos 1 foto de mercancía")
+            else: st.warning("Toma la foto primero")
+
+        if col2.button("Terminar mercancía y seguir", type="primary"):
+            if st.session_state.fotos_mercancia > 0:
+                st.session_state.paso += 1
+                st.rerun()
+            else: st.warning("Debes tomar al menos 1 foto de mercancía")
 
     else:
-        # CAMBIO 2: key fija para que no sature memoria
-        foto = st.camera_input("Toma la foto", key=f"camara_paso_{st.session_state.paso}")
+        foto = st.camera_input("Toma la foto")
         if st.button("Guardar y siguiente", type="primary"):
             if foto:
                 with st.spinner('Subiendo a Drive...'):
@@ -158,12 +163,7 @@ else:
     st.balloons()
     st.link_button("Ver carpeta en Drive", f"https://drive.google.com/drive/folders/{st.session_state.carpeta_referencia_id}")
     if st.button("Empezar nueva Referencia"):
-        # CAMBIO 3: Limpiar keys para liberar memoria
-        for key in list(st.session_state.keys()):
-            if key.startswith('camara_') or key.startswith('uploader_'):
-                del st.session_state[key]
         st.session_state.paso = -1
         st.session_state.referencia = ""
         st.session_state.fotos_mercancia = 0
         st.session_state.carpeta_referencia_id = ""
-        st.rerun()
